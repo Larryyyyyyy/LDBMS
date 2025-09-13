@@ -7,15 +7,15 @@ import backend.tm
 import backend.tm.TransactionManager
 import backend.vm.Entry
 import backend.vm.Visibility
+from backend.tm.TransactionManager import TransactionManager
+from backend.dm.DataManager import DataManager
 from backend.vm.Transaction import newTransaction
 from backend.vm.LockTable import LockTable
+from backend.vm.Entry import Entry
 from backend.common.AbstractCache import AbstractClass
 
-def newVersionManager(tm, dm):
-    return VersionManager(tm, dm)
-
 class VersionManager(AbstractClass):
-    def __init__(self, tm, dm):
+    def __init__(self, tm: TransactionManager, dm: DataManager):
         super().__init__(0)
         self.tm = tm
         self.dm = dm
@@ -24,24 +24,24 @@ class VersionManager(AbstractClass):
         self.lock = threading.RLock()
         self.lt = LockTable()
 
-    '''
-    开启一个事务并初始化事务的结构
-    将其存放在 activeTransaction 中,用于检查和快照使用
-    '''
-    def begin(self, level):
+    def begin(self, level: int) -> int:
+        '''
+        开启一个事务并初始化事务的结构
+        将其存放在 activeTransaction 中, 用于检查和快照使用
+        '''
         self.lock.acquire()
         try:
-            xid  = self.tm.begin()
+            xid = self.tm.begin()
             t = newTransaction(xid, level, self.activeTransaction)
             self.activeTransaction[xid] = t
             return xid
         finally:
             self.lock.release()
 
-    '''
-    方法提交一个事务,就是 free 掉相关的结构,并且释放持有的锁,并修改 TM 状态
-    '''
-    def commit(self, xid):
+    def commit(self, xid: int) -> None:
+        '''
+        方法提交一个事务, 就是 free 掉相关的结构, 并且释放持有的锁, 并修改 TM 状态
+        '''
         self.lock.acquire()
         t = self.activeTransaction[xid]
         self.lock.release()
@@ -50,13 +50,15 @@ class VersionManager(AbstractClass):
         self.lock.acquire()
         self.activeTransaction.pop(xid, None)
         self.lock.release()
+        # 清理该事务持有的所有锁
         self.lt.remove(xid)
+        # 通知事务管理器事务已提交
         self.tm.commit(xid)
 
-    '''
-    注意判断 entry 对事务的可见性
-    '''
-    def read(self, xid, uid):
+    def read(self, xid: int, uid: int) -> None | bytearray | bytes:
+        '''
+        读取并判断 entry 对事务的可见性
+        '''
         self.lock.acquire()
         t = self.activeTransaction[xid]
         self.lock.release()
@@ -78,10 +80,10 @@ class VersionManager(AbstractClass):
         finally:
             entry.release()
 
-    '''
-    把数据包裹成 Entry 交给 DataManager
-    '''
-    def insert(self, xid, data):
+    def insert(self, xid: int, data: bytearray | bytes) -> int:
+        '''
+        把数据包裹成 Entry 交给 DataManager 完成插入
+        '''
         self.lock.acquire()
         t = self.activeTransaction[xid]
         self.lock.release()
@@ -90,7 +92,10 @@ class VersionManager(AbstractClass):
         raw = backend.vm.Entry.wrapEntryRaw(xid, data)
         return self.dm.insert(xid, raw)
 
-    def delete(self, xid, uid):
+    def delete(self, xid: int, uid: int) -> bool:
+        '''
+        删除指定 uid 的数据
+        '''
         self.lock.acquire()
         t = self.activeTransaction[xid]
         self.lock.release()
@@ -130,20 +135,24 @@ class VersionManager(AbstractClass):
         finally:
             entry.release()
             
-    '''
-    abort 事务的方法则有两种:手动和自动
-    手动指的是调用 abort() 方法
-    自动是在事务被检测出出现死锁时,会自动撤销回滚事务;或者出现版本跳跃时,也会自动回滚
-    '''
-    def abort(self, xid):
+    def abort(self, xid: int) -> None:
+        '''
+        手动 abort 事务
+        '''
         self.internAbort(xid, False)
 
-    def internAbort(self, xid, autoAborted):
+    def internAbort(self, xid: int, autoAborted: bool) -> None:
+        '''
+        autoAborted: 1 自动 abort 事务
+        autoAborted: 0 手动 abort 事务
+        在事务被检测出出现死锁时, 会自动撤销回滚事务; 或者出现版本跳跃时, 也会自动回滚
+        '''
         self.lock.acquire()
         t = self.activeTransaction[xid]
         if autoAborted == False:
             self.activeTransaction.pop(xid, None)
         self.lock.release()
+        # 事务不从 activeTransaction 中移除, 因为这可能影响其他事务的快照
         if t.autoAborted == True:
             return
         self.lt.remove(xid)
@@ -152,7 +161,7 @@ class VersionManager(AbstractClass):
     def releaseEntry(self, entry):
         super().release(entry.uid)
 
-    def getForCache(self, uid):
+    def getForCache(self, uid: int) -> Entry:
         entry = backend.vm.Entry.loadEntry(self, uid)
         if entry == None:
             raise Exception("NullEntryException")
@@ -160,3 +169,6 @@ class VersionManager(AbstractClass):
 
     def releaseForCache(self, entry):
         entry.remove()
+
+def newVersionManager(tm: TransactionManager, dm: DataManager) -> VersionManager:
+    return VersionManager(tm, dm)

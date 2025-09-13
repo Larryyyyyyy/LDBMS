@@ -7,7 +7,10 @@
 '''
 from transport.Package import Package
 class Encoder(object):
-    def encode(self, pkg):
+    def encode(self, pkg: Package) -> bytes:
+        '''
+        编码
+        '''
         if pkg.err is not None:
             err = pkg.err
             msg = "Intern server error!"
@@ -17,7 +20,10 @@ class Encoder(object):
         else:
             return bytes([0]) + pkg.data
 
-    def decode(self, data):
+    def decode(self, data: bytearray | bytes) -> Package:
+        '''
+        解码
+        '''
         if len(data) < 1:
             raise Exception("InvalidPkgDataException")
         if data[0] == 0:

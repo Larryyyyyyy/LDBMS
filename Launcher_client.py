@@ -1,5 +1,4 @@
 from transport.Packager import Packager
-from transport.Package import Package
 from transport.Transporter import Transporter
 from transport.Encoder import Encoder
 from client.Client import Client
@@ -8,6 +7,11 @@ import socket
 
 class Launcher(object):
     def main(self):
+        '''
+        连接数据库服务器
+        默认ip: 127.0.0.1
+        默认端口: 9999
+        '''
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.connect(("127.0.0.1", 9999))
         encoder = Encoder()
@@ -20,15 +24,15 @@ class Launcher(object):
 '''
 python Launcher_client.py
 示例指令:
-create table test_table id int32, value int32 (index id)
-insert into test_table values 10 33
-select * from test_table where id=10
+create table students id int32, name string, age int32 (index id name)
+insert into students values 202430206 Larry 19
+select * from students where id=202430206
 begin
-insert into test_table values 20 34
+insert into students values 202430211 Eric 19
 commit
-select * from test_table where id>0
+select * from students where id>0
 begin
-delete from test_table where id=10
+delete from students where id=202430211
 abort
 '''
 

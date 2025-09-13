@@ -11,15 +11,14 @@ KB = 1 << 10
 MB = 1 << 20
 GB = 1 << 30
 
-def createDB(path):
+def createDB(path: str) -> None:
     tm = TransactionManager.create(path)
     dm = DataManager.create(path, DEFALUT_MEM, tm)
     vm = VersionManager(tm, dm)
     TableManager.create(path, vm, dm)
-    #tm.close()
     dm.close()
 
-def openDB(path, mem = DEFALUT_MEM):
+def openDB(path: str, mem = DEFALUT_MEM) -> None:
     tm = TransactionManager.fileopen(path)
     dm = DataManager.fileopen(path, mem, tm)
     vm = VersionManager(tm, dm)
@@ -27,7 +26,7 @@ def openDB(path, mem = DEFALUT_MEM):
     server = Server(port, tbm)
     server.start()
 
-def parseMem(memStr):
+def parseMem(memStr: str) -> int:
     if memStr is None or memStr == "":
         return DEFALUT_MEM
     if len(memStr) < 2:
@@ -51,6 +50,8 @@ python Launcher_server.py -open "C:/Users/91026/Desktop/vscode/py/LDBMS/tmp/ldbm
 '''
 
 if __name__ == "__main__":
+#    createDB("C:/Users/91026/Desktop/vscode/py/LDBMS/tmp/ldbms")
+    openDB("C:/Users/91026/Desktop/vscode/py/LDBMS/tmp/ldbms", DEFALUT_MEM)
     parser = ArgumentParser(description="Database Launcher")
     parser.add_argument("-open", type=str, help="Open existing database at DBPath")
     parser.add_argument("-create", type=str, help="Create new database at DBPath")

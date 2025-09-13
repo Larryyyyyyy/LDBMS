@@ -1,20 +1,18 @@
 '''
-二叉树由一个个 Node 组成，每个 Node 都存储在一条 DataItem 中,结构如下:
+二叉树由一个个 Node 组成，每个 Node 都存储在一条 DataItem 中, 结构如下:
 [LeafFlag][KeyNumber][SiblingUid]
 [Son0][Key0][Son1][Key1]...[SonN][KeyN]
-其中 LeafFlag 标记了该节点是否是个叶子节点;
-KeyNumber 为该节点中 key 的个数;
+其中 LeafFlag 标记了该节点是否是个叶子节点
+KeyNumber 为该节点中 key 的个数
 SiblingUid 是其兄弟节点存储在 DM 中的 UID
 后续是穿插的子节点(SonN)和 KeyN
-最后的一个 KeyN 始终为 MAX_VALUE 以此方便查找。
+最后的一个 KeyN 始终为 MAX_VALUE 以此方便查找
 
-Node 类持有了其 B+ 树结构的引用,DataItem 的引用和 SubArray 的引用,用于方便快速修改数据和释放数据
+Node 类持有了其 B+ 树结构的引用, DataItem 的引用和 SubArray 的引用, 用于方便快速修改数据和释放数据
 '''
 import struct
 import backend.tm.TransactionManager
 from backend.common.SubArray import SubArray
-from backend.dm.dataItem import DataItem
-from backend.tm.TransactionManager import TransactionManager
 
 IS_LEAF_OFFSET = 0
 NO_KEYS_OFFSET = IS_LEAF_OFFSET + 1
@@ -22,80 +20,6 @@ SIBLING_OFFSET = NO_KEYS_OFFSET + 2
 NODE_HEADER_SIZE = SIBLING_OFFSET + 8
 BALANCE_NUMBER = 32
 NODE_SIZE = NODE_HEADER_SIZE + (2 * 8) * (BALANCE_NUMBER * 2 + 2)
-
-def setRawIsLeaf(raw, isLeaf):
-    if isLeaf:
-        raw.raw[raw.start + IS_LEAF_OFFSET] = 1
-    else:
-        raw.raw[raw.start + IS_LEAF_OFFSET] = 0
-
-def getRawIfLeaf(raw):
-    return raw.raw[raw.start + IS_LEAF_OFFSET] == 1
-
-def setRawNoKeys(raw, noKeys):
-    raw.raw[raw.start + NO_KEYS_OFFSET : raw.start + NO_KEYS_OFFSET + 2] = struct.pack('>h', noKeys)
-
-def getRawNoKeys(raw):
-    return struct.unpack('>h', raw.raw[raw.start + NO_KEYS_OFFSET : raw.start + NO_KEYS_OFFSET + 2])[0]
-
-def setRawSibling(raw, sibling):
-    raw.raw[raw.start + SIBLING_OFFSET : raw.start + SIBLING_OFFSET + 8] = struct.pack('>q', sibling)
-
-def getRawSibling(raw):
-    return struct.unpack('>q', raw.raw[raw.start + SIBLING_OFFSET : raw.start + SIBLING_OFFSET + 8])[0]
-
-def setRawKthSon(raw, uid, kth):
-    offset = raw.start + NODE_HEADER_SIZE + kth * (8 * 2)
-    raw.raw[offset : offset + 8] = struct.pack('>q', uid)
-
-def getRawKthSon(raw, kth):
-    offset = raw.start + NODE_HEADER_SIZE + kth * (8 * 2)
-    return struct.unpack('>q', raw.raw[offset : offset + 8])[0]
-
-def setRawKthKey(raw, key, kth):
-    offset = raw.start + NODE_HEADER_SIZE + kth * (8 * 2) + 8
-    raw.raw[offset : offset + 8] = struct.pack('>q', key)
-
-def getRawKthKey(raw, kth):
-    offset = raw.start + NODE_HEADER_SIZE + kth * (8 * 2) + 8
-    return struct.unpack('>q', raw.raw[offset : offset + 8])[0]
-
-def copyRawFromKth(raw, to, kth):
-    offset = raw.start + NODE_HEADER_SIZE + kth * (8 * 2)
-    to.raw[to.start + NODE_HEADER_SIZE : to.start + NODE_HEADER_SIZE + raw.end - offset] = raw.raw[offset : raw.end]
-
-def shiftRawKth(raw, kth):
-    begin = raw.start + NODE_HEADER_SIZE + (kth + 1) * (8 * 2)
-    end = raw.start + NODE_SIZE - 1
-    for i in range(end, begin - 1, -1):
-        raw.raw[i] = raw.raw[i - (8 * 2)]
-
-def newRootRaw(left, right, key):
-    raw = SubArray(bytearray(NODE_SIZE), 0, NODE_SIZE)
-    setRawIsLeaf(raw, False)
-    setRawNoKeys(raw, 2)
-    setRawSibling(raw, 0)
-    setRawKthSon(raw, left, 0)
-    setRawKthKey(raw, key, 0)
-    setRawKthSon(raw, right, 1)
-    setRawKthKey(raw, 9223372036854775807, 1)
-    return raw.raw
-
-def newNilRootRaw():
-    raw = SubArray(bytearray(NODE_SIZE), 0, NODE_SIZE)
-    setRawIsLeaf(raw, True)
-    setRawNoKeys(raw, 0)
-    setRawSibling(raw, 0)
-    return raw.raw
-
-def loadNode(bTree, uid):
-    di = bTree.dm.read(uid)
-    n = Node()
-    n.tree = bTree
-    n.dataItem = di
-    n.raw = di.data()
-    n.uid = uid
-    return n
 
 class Node(object):
     def __init__(self, tree = None, dataItem = None, raw = None, uid = None):
@@ -125,17 +49,17 @@ class Node(object):
             self.newSon = newSon
             self.newKey = newKey
 
-    def release(self):
+    def release(self) -> None:
         self.dataItem.release()
 
-    def isLeaf(self):
+    def isLeaf(self) -> bool:
         self.dataItem.rLock.acquire()
         try:
             return getRawIfLeaf(self.raw)
         finally:
             self.dataItem.rLock.release()
 
-    def searchNext(self, key):
+    def searchNext(self, key: int) -> SearchNextRes:
         self.dataItem.rLock.acquire()
         try:
             res = self.SearchNextRes()
@@ -152,7 +76,7 @@ class Node(object):
         finally:
             self.dataItem.rLock.release()
     
-    def leafSearchRange(self, leftKey, rightKey):
+    def leafSearchRange(self, leftKey: int, rightKey: int) -> LeafSearchRangeRes:
         self.dataItem.rLock.acquire()
         try:
             noKeys = getRawNoKeys(self.raw)
@@ -180,7 +104,7 @@ class Node(object):
         finally:
             self.dataItem.rLock.release()
 
-    def insertAndSplit(self, uid, key):
+    def insertAndSplit(self, uid: int, key: int) -> InsertAndSplitRes:
         success = False
         res = self.InsertAndSplitRes()
         self.dataItem.before()
@@ -202,7 +126,7 @@ class Node(object):
             else:
                 self.dataItem.unBefore()
 
-    def insert(self, uid, key):
+    def insert(self, uid: int, key: int) -> bool:
         noKeys = getRawNoKeys(self.raw)
         kth = 0
         while kth < noKeys:
@@ -227,10 +151,10 @@ class Node(object):
             setRawNoKeys(self.raw, noKeys + 1)
         return True
 
-    def needSplit(self):
+    def needSplit(self) -> bool:
         return BALANCE_NUMBER * 2 == getRawNoKeys(self.raw)
 
-    def split(self):
+    def split(self) -> SplitRes:
         nodeRaw = SubArray(bytearray(NODE_SIZE), 0, NODE_SIZE)
         setRawIsLeaf(nodeRaw, getRawIfLeaf(self.raw))
         setRawNoKeys(nodeRaw, BALANCE_NUMBER)
@@ -242,7 +166,7 @@ class Node(object):
         res = self.SplitRes(son, getRawKthKey(nodeRaw, 0))
         return res
 
-    def toString(self):
+    def toString(self) -> str:
         s = ""
         s += "Is leaf: " + ("True" if getRawIfLeaf(self.raw) else "False") + "\n"
         KeyNumber = getRawNoKeys(self.raw)
@@ -251,3 +175,80 @@ class Node(object):
         for i in range(KeyNumber):
             s += "son: " + str(getRawKthSon(self.raw, i)) + ", key: " + str(getRawKthKey(self.raw, i)) + "\n"
         return s
+
+def setRawIsLeaf(raw: SubArray, isLeaf: bool) -> None:
+    if isLeaf:
+        raw.raw[raw.start + IS_LEAF_OFFSET] = 1
+    else:
+        raw.raw[raw.start + IS_LEAF_OFFSET] = 0
+
+def getRawIfLeaf(raw: SubArray) -> bool:
+    return raw.raw[raw.start + IS_LEAF_OFFSET] == 1
+
+def setRawNoKeys(raw: SubArray, noKeys: int) -> None:
+    raw.raw[raw.start + NO_KEYS_OFFSET : raw.start + NO_KEYS_OFFSET + 2] = struct.pack('>h', noKeys)
+
+def getRawNoKeys(raw: SubArray) -> bool:
+    return struct.unpack('>h', raw.raw[raw.start + NO_KEYS_OFFSET : raw.start + NO_KEYS_OFFSET + 2])[0]
+
+def setRawSibling(raw: SubArray, sibling: int) -> None:
+    raw.raw[raw.start + SIBLING_OFFSET : raw.start + SIBLING_OFFSET + 8] = struct.pack('>q', sibling)
+
+def getRawSibling(raw: SubArray) -> int:
+    return struct.unpack('>q', raw.raw[raw.start + SIBLING_OFFSET : raw.start + SIBLING_OFFSET + 8])[0]
+
+def setRawKthSon(raw: SubArray, uid: int, kth: int) -> None:
+    offset = raw.start + NODE_HEADER_SIZE + kth * (8 * 2)
+    raw.raw[offset : offset + 8] = struct.pack('>q', uid)
+
+def getRawKthSon(raw: SubArray, kth: int) -> int:
+    offset = raw.start + NODE_HEADER_SIZE + kth * (8 * 2)
+    return struct.unpack('>q', raw.raw[offset : offset + 8])[0]
+
+def setRawKthKey(raw: SubArray, key: int, kth: int) -> None:
+    offset = raw.start + NODE_HEADER_SIZE + kth * (8 * 2) + 8
+    raw.raw[offset : offset + 8] = struct.pack('>q', key)
+
+def getRawKthKey(raw: SubArray, kth: int) -> int:
+    offset = raw.start + NODE_HEADER_SIZE + kth * (8 * 2) + 8
+    return struct.unpack('>q', raw.raw[offset : offset + 8])[0]
+
+def copyRawFromKth(raw: SubArray, to: SubArray, kth: int) -> None:
+    offset = raw.start + NODE_HEADER_SIZE + kth * (8 * 2)
+    to.raw[to.start + NODE_HEADER_SIZE : to.start + NODE_HEADER_SIZE + raw.end - offset] = raw.raw[offset : raw.end]
+
+def shiftRawKth(raw: SubArray, kth: int) -> None:
+    begin = raw.start + NODE_HEADER_SIZE + (kth + 1) * (8 * 2)
+    end = raw.start + NODE_SIZE - 1
+    for i in range(end, begin - 1, -1):
+        raw.raw[i] = raw.raw[i - (8 * 2)]
+
+def newRootRaw(left: int, right: int, key: int) -> bytearray | bytes:
+    '''
+    生成一个根节点
+    '''
+    raw = SubArray(bytearray(NODE_SIZE), 0, NODE_SIZE)
+    setRawIsLeaf(raw, False)
+    setRawNoKeys(raw, 2)
+    setRawSibling(raw, 0)
+    setRawKthSon(raw, left, 0)
+    setRawKthKey(raw, key, 0)
+    setRawKthSon(raw, right, 1)
+    setRawKthKey(raw, 9223372036854775807, 1)
+    return raw.raw
+
+def newNilRootRaw() -> bytearray | bytes:
+    raw = SubArray(bytearray(NODE_SIZE), 0, NODE_SIZE)
+    setRawIsLeaf(raw, True)
+    setRawNoKeys(raw, 0)
+    setRawSibling(raw, 0)
+    return raw.raw
+
+def loadNode(bTree, uid: int) -> Node:
+    di = bTree.dm.read(uid)
+    n = Node()
+    n.tree = bTree
+    n.dataItem = di
+    n.raw = di.data()
+    n.uid = uid
+    return n

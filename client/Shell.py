@@ -1,9 +1,10 @@
-import os
+from client.Client import Client
+
 class Shell(object):
-    def __init__(self, client):
+    def __init__(self, client: Client):
         self.client = client
     
-    def run(self):
+    def run(self) -> None:
         while True:
             stat_str = input(":> ")
             if stat_str in ["exit", "quit"]:

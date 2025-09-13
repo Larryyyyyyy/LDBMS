@@ -1,33 +1,14 @@
-import struct
-import backend.tbm.Field
-import backend.tm.TransactionManager
 '''
 Table 维护了表结构
 二进制结构如下：
 [TableName][NextTable]
 [Field1Uid][Field2Uid]...[FieldNUid]
 '''
-def loadTable(tbm, uid):
-    raw = None
-    try:
-        raw = tbm.vm.read(backend.tm.TransactionManager.SUPER_XID, uid)
-    except Exception as e:
-        raise e
-    assert raw is not None
-    return Table(tbm, uid).parseSelf(raw)
-
-def createTable(tbm, nextUid, xid, create):
-    tb = Table(tbm, 0, create.tableName, b'0', nextUid)
-    for i in range(len(create.fieldName)):
-        fieldName = create.fieldName[i]
-        fieldType = create.fieldType[i]
-        indexed = False
-        for j in range(len(create.index)):
-            if fieldName == create.index[j]:
-                indexed = True
-                break
-        tb.fields.append(backend.tbm.Field.createField(tb, xid, fieldName, fieldType, indexed))
-    return tb.persistSelf(xid)
+from typing import Self
+import struct
+import backend.tbm.Field
+import backend.tm.TransactionManager
+import backend.parser.statement.Statements as Statements
 
 class Table(object):
     def __init__(self, tbm, uid = 0, name = "", status = b'0', nextUid = 0):
@@ -46,7 +27,7 @@ class Table(object):
             self.r1 = r1
             self.single = single
 
-    def parseSelf(self, raw):
+    def parseSelf(self, raw: bytearray | bytes) -> Self:
         length = struct.unpack('>i', raw[0 : 4])[0]
         self.name = raw[4 : 4 + length].decode('utf-8')
         position = length + 4
@@ -58,7 +39,7 @@ class Table(object):
             self.fields.append(backend.tbm.Field.loadField(self, uid))
         return self
     
-    def persistSelf(self, xid):
+    def persistSelf(self, xid: int) -> Self:
         nameRaw = struct.pack('>i', len(self.name)) + self.name.encode('utf-8')
         nextRaw = struct.pack('>q', self.nextUid)
         fieldRaw = b''
@@ -67,7 +48,7 @@ class Table(object):
         self.uid = self.tbm.vm.insert(xid, nameRaw + nextRaw + fieldRaw)
         return self
     
-    def delete(self, xid, delete):
+    def delete(self, xid: int, delete: Statements.Delete) -> int:
         uids = self.parseWhere(delete.where)
         count = 0
         for uid in uids:
@@ -75,7 +56,7 @@ class Table(object):
                 count += 1
         return count
     
-    def update(self, xid, update):
+    def update(self, xid: int, update: Statements.Update) -> int:
         uids = self.parseWhere(update.where)
         fd = None
         for f in self.fields:
@@ -101,7 +82,7 @@ class Table(object):
                     field.insert(entry.get(field.fieldName), newUid)
         return count
     
-    def read(self, xid, read):
+    def read(self, xid: int, read: Statements.Select) -> str:
         uids = self.parseWhere(read.where)
         sb = []
         for uid in uids:
@@ -112,7 +93,7 @@ class Table(object):
             sb.append(self.printEntry(entry) + "\n")
         return ''.join(sb)
     
-    def insert(self, xid, insert):
+    def insert(self, xid: int, insert: Statements.Insert) -> None:
         entry = self.string2Entry(insert.values)
         raw = self.entry2Raw(entry)
         uid = self.tbm.vm.insert(xid, raw)
@@ -120,7 +101,7 @@ class Table(object):
             if field.isIndexed():
                 field.insert(entry.get(field.fieldName), uid)
 
-    def string2Entry(self, values):
+    def string2Entry(self, values: list) -> dict:
         if len(values) != len(self.fields):
             raise Exception("InvalidValuesException")
         entry = {}
@@ -130,7 +111,7 @@ class Table(object):
             entry[field.fieldName] = value
         return entry
     
-    def parseWhere(self, where):
+    def parseWhere(self, where: Statements.Where) -> list:
         l0 = 0
         r0 = 0
         l1 = 0
@@ -142,7 +123,7 @@ class Table(object):
                 if field.isIndexed():
                     fd = field
                     break
-            l0 = 0
+            l0 = -9223372036854775808
             r0 = 9223372036854775807
             single = True
         else:
@@ -166,7 +147,7 @@ class Table(object):
             uids.extend(tmp)
         return uids
     
-    def calWhere(self, fd, where):
+    def calWhere(self, fd: backend.tbm.Field.Field, where: Statements.Where) -> CalWhereRes:
         res = self.CalWhereRes()
         if where.logicOp == "":
             res.single = True
@@ -197,7 +178,7 @@ class Table(object):
             raise Exception("InvalidLogOpException")
         return res
     
-    def printEntry(self, entry):
+    def printEntry(self, entry: dict) -> str:
         sb = "["
         for i in range(len(self.fields)):
             field = self.fields[i]
@@ -208,7 +189,7 @@ class Table(object):
                 sb += ", "
         return sb
     
-    def parseEntry(self, raw):
+    def parseEntry(self, raw: bytearray | bytes) -> dict:
         pos = 0
         entry = {}
         for field in self.fields:
@@ -217,13 +198,13 @@ class Table(object):
             pos += r.shift
         return entry
     
-    def entry2Raw(self, entry):
+    def entry2Raw(self, entry: dict) -> bytearray | bytes:
         raw = b''
         for field in self.fields:
             raw += field.value2Raw(entry.get(field.fieldName))
         return raw
     
-    def toString(self):
+    def toString(self) -> str:
         sb = "{"
         sb += self.name + ": "
         for field in self.fields:
@@ -233,3 +214,25 @@ class Table(object):
             else:
                 sb += ", "
         return sb
+    
+def loadTable(tbm, uid: int) -> Table:
+    raw = None
+    try:
+        raw = tbm.vm.read(backend.tm.TransactionManager.SUPER_XID, uid)
+    except Exception as e:
+        raise e
+    assert raw is not None
+    return Table(tbm, uid).parseSelf(raw)
+
+def createTable(tbm, nextUid: int, xid: int, create: Statements.Create) -> Table:
+    tb = Table(tbm, 0, create.tableName, b'0', nextUid)
+    for i in range(len(create.fieldName)):
+        fieldName = create.fieldName[i]
+        fieldType = create.fieldType[i]
+        indexed = False
+        for j in range(len(create.index)):
+            if fieldName == create.index[j]:
+                indexed = True
+                break
+        tb.fields.append(backend.tbm.Field.createField(tb, xid, fieldName, fieldType, indexed))
+    return tb.persistSelf(xid)

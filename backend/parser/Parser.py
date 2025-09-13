@@ -17,36 +17,43 @@
     ...
     <field name> <field type>
     [(index <field name list>)]
+    example:
         create table students
         id int32,
         name string,
-        age int32,
+        age int32
         (index id name)
 
 <drop statement>
     drop table <table name>
+    example:
         drop table students
 
 <select statement>
     select (*<field name list>) from <table name> [<where statement>]
+    example:
         select * from student where id = 1
         select name from student where id > 1 and id < 4
         select name, age, id from student where id = 12
 
 <insert statement>
     insert into <table name> values <value list>
+    example:
         insert into student values 5 "Zhang Yuanjia" 22
 
 <delete statement>
     delete from <table name> <where statement>
+    example:
         delete from student where name = "Zhang Yuanjia"
 
 <update statement>
     update <table name> set <field name>=<value> [<where statement>]
+    example:
         update student set name = "ZYJ" where id = 5
 
 <where statement>
     where <field name> (><=) <value> [(andor) <field name> (><=) <value>]
+    example:
         where age > 10 or age < 3
 
 <field name> <table name>
@@ -61,7 +68,7 @@
 import backend.parser.statement.Statements
 from backend.parser.Tokenizer import Tokenizer
 
-def Parse(statement):
+def Parse(statement: bytearray | bytes):
     tokenizer = Tokenizer(statement)
     token = tokenizer.peek()
     tokenizer.pop()
@@ -104,13 +111,13 @@ def Parse(statement):
         raise statErr
     return stat
 
-def parseShow(tokenizer):
+def parseShow(tokenizer: Tokenizer):
     tmp = tokenizer.peek()
     if tmp == "":
         return backend.parser.statement.Statements.Show()
     raise Exception("InvalidCommandException")
 
-def parseUpdate(tokenizer):
+def parseUpdate(tokenizer: Tokenizer):
     update = backend.parser.statement.Statements.Update()
     update.tableName = tokenizer.peek()
     tokenizer.pop()
@@ -132,7 +139,7 @@ def parseUpdate(tokenizer):
     update.where = parseWhere(tokenizer)
     return update
 
-def parseDelete(tokenizer):
+def parseDelete(tokenizer: Tokenizer):
     delete = backend.parser.statement.Statements.Delete()
     if tokenizer.peek() != "from":
         raise Exception("InvalidCommandException")
@@ -144,7 +151,7 @@ def parseDelete(tokenizer):
     delete.where = parseWhere(tokenizer)
     return delete
 
-def parseInsert(tokenizer):
+def parseInsert(tokenizer: Tokenizer):
     insert = backend.parser.statement.Statements.Insert()
     if tokenizer.peek() != "into":
         raise Exception("InvalidCommandException")
@@ -165,7 +172,7 @@ def parseInsert(tokenizer):
     insert.values = values
     return insert
 
-def parseSelect(tokenizer):
+def parseSelect(tokenizer: Tokenizer):
     select = backend.parser.statement.Statements.Select()
     if tokenizer.peek() == "*":
         select.fields.append("*")
@@ -195,7 +202,7 @@ def parseSelect(tokenizer):
     select.where = parseWhere(tokenizer)
     return select
 
-def parseWhere(tokenizer):
+def parseWhere(tokenizer: Tokenizer):
     where = backend.parser.statement.Statements.Where()
     if tokenizer.peek() != "where":
         raise Exception("InvalidCommandException")
@@ -217,7 +224,7 @@ def parseWhere(tokenizer):
         raise Exception("InvalidCommandException")
     return where
 
-def parseSingleExp(tokenizer):
+def parseSingleExp(tokenizer: Tokenizer):
     singleExp = backend.parser.statement.Statements.SingleExpression()
     field = tokenizer.peek()
     if not isName(field):
@@ -233,7 +240,7 @@ def parseSingleExp(tokenizer):
     tokenizer.pop()
     return singleExp
 
-def parseDrop(tokenizer):
+def parseDrop(tokenizer: Tokenizer):
     if tokenizer.peek() != "table":
         raise Exception("InvalidCommandException")
     tokenizer.pop()
@@ -246,7 +253,7 @@ def parseDrop(tokenizer):
     drop = backend.parser.statement.Statements.Drop(tableName)
     return drop
 
-def parseCreate(tokenizer):
+def parseCreate(tokenizer: Tokenizer):
     if tokenizer.peek() != "table":
         raise Exception("InvalidCommandException")
     tokenizer.pop()
@@ -300,17 +307,17 @@ def parseCreate(tokenizer):
         raise Exception("InvalidCommandException")
     return create
 
-def parseAbort(tokenizer):
+def parseAbort(tokenizer: Tokenizer):
     if tokenizer.peek() != "":
         raise Exception("InvalidCommandException")
     return backend.parser.statement.Statements.Abort()
 
-def parseCommit(tokenizer):
+def parseCommit(tokenizer: Tokenizer):
     if tokenizer.peek() != "":
         raise Exception("InvalidCommandException")
     return backend.parser.statement.Statements.Commit()
 
-def parseBegin(tokenizer):
+def parseBegin(tokenizer: Tokenizer):
     if tokenizer.peek() != "isolation":
         return backend.parser.statement.Statements.Begin()
     tokenizer.pop()
@@ -337,14 +344,14 @@ def parseBegin(tokenizer):
     else:
         raise Exception("InvalidCommandException")
 
-def isName(name):
+def isName(name: str) -> bool:
     return not (len(name) == 1 and not Tokenizer.isAlphaBeta(name.encode('utf-8')[0]))
 
-def isType(tp):
+def isType(tp: str) -> bool:
     return tp in ("int32", "int64", "string")
 
-def isCmpOp(op):
+def isCmpOp(op: str) -> bool:
     return op in ("=", ">", "<")
 
-def isLogicOp(op):
+def isLogicOp(op: str) -> bool:
     return op in ("and", "or")

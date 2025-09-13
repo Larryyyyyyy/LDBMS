@@ -1,17 +1,18 @@
 import backend.parser.statement.Statements as Statements
 import backend.parser.Parser as Parser
+from backend.tbm.TableManager import TableManager
 
 class Executor(object):
-    def __init__(self, tbm):
+    def __init__(self, tbm: TableManager):
         self.tbm = tbm
         self.xid = 0
 
-    def close(self):
+    def close(self) -> None:
         if self.xid:
             print(f"Abnormal Abort: {self.xid}")
             self.tbm.abort(self.xid)
 
-    def execute(self, sql):
+    def execute(self, sql: bytearray | bytes) -> bytearray | bytes:
         print(f"Execute: {sql.decode('utf-8')}")
         stat = Parser.Parse(sql)
         if isinstance(stat, Statements.Begin):
@@ -35,7 +36,7 @@ class Executor(object):
         else:
             return self.execute2(stat)
     
-    def execute2(self, stat):
+    def execute2(self, stat) -> bytearray | bytes | None:
         tmpTransaction = False
         e = None
         if self.xid == 0:

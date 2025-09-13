@@ -1,54 +1,39 @@
-'''
-对于一条记录来说,使用 Entry 类维护了其结构
-对于字段的更新操作由后面的表和字段管理 TBM 实现
-所以在 VM 的实现中,一条记录只有一个版本
-一条记录存储在一条 Data Item 中,所以 Entry 中保存一个 DataItem 的引用即可
-'''
-# VM向上层抽象出entry
-# entry结构：
+# VM 向上层抽象出 entry
+# entry 结构:
 # [XMIN] [XMAX] [data]
-# XMIN 是创建该条记录(版本)的事务编号,而 XMAX 则是删除该条记录(版本)的事务编号
+# XMIN 是创建该条记录(版本)的事务编号, 而 XMAX 则是删除该条记录(版本)的事务编号
 # DATA 就是这条记录持有的数据
 
 import struct
-from backend.common.SubArray import SubArray
-from backend.dm.dataItem import DataItem
+from backend.dm.dataItem.DataItem import DataItem
 
 OF_XMIN = 0
 OF_XMAX = OF_XMIN + 8
 OF_DATA = OF_XMAX + 8
-def newEntry(vm, dataItem, uid):
-    return Entry(vm, dataItem, uid)
-
-def loadEntry(vm, uid):
-    di = vm.dm.read(uid)
-    return Entry(vm, di, uid)
-
-def wrapEntryRaw(xid, data):
-    xmin = struct.pack(">q", xid)
-    xmax = bytearray(8)
-    return xmin + xmax + data
 
 class Entry(object):
-    def __init__(self, vm, dataItem, uid):
+    def __init__(self, vm, dataItem: DataItem, uid: int):
         if dataItem == None:
             return None
         self.vm = vm
         self.dataItem = dataItem
         self.uid = uid
     
-    def release(self):
+    def release(self) -> None:
         self.vm.releaseEntry(self)
 
-    def remove(self):
+    def remove(self) -> None:
         self.dataItem.release()
 
-    def data(self):
+    def data(self) -> bytearray | bytes:
+        '''
+        获取记录中持有的数据
+        '''
         sa = self.dataItem.data()
         data = sa.raw[sa.start + OF_DATA : sa.end]
         return data
 
-    def getXmin(self):
+    def getXmin(self) -> int:
         self.dataItem.rLock.acquire()
         try:
             sa = self.dataItem.data()
@@ -57,7 +42,7 @@ class Entry(object):
         finally:
             self.dataItem.rLock.release()
     
-    def getXmax(self):
+    def getXmax(self) -> int:
         self.dataItem.rLock.acquire()
         try:
             sa = self.dataItem.data()
@@ -66,8 +51,29 @@ class Entry(object):
         finally:
             self.dataItem.rLock.release()
 
-    def setXmax(self, xid):
+    def setXmax(self, xid: int) -> None:
         self.dataItem.before()
         sa = self.dataItem.data()
         sa.raw[sa.start + OF_XMAX : sa.start + OF_XMAX + 8] = struct.pack('>q', xid)
         self.dataItem.after(xid)
+
+def newEntry(vm, dataItem: DataItem, uid: int) -> Entry:
+    '''
+    构造一个新的 Entry
+    '''
+    return Entry(vm, dataItem, uid)
+
+def loadEntry(vm, uid: int) -> Entry:
+    '''
+    从 dm 读取 DataItem 构造为一个 Entry 
+    '''
+    di = vm.dm.read(uid)
+    return Entry(vm, di, uid)
+
+def wrapEntryRaw(xid: int, data: bytearray | bytes) -> bytearray | bytes:
+    '''
+    创建记录时调用, 记录创建该条记录的事务编号
+    '''
+    xmin = struct.pack(">q", xid)
+    xmax = bytearray(8)
+    return xmin + xmax + data

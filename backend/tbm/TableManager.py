@@ -2,22 +2,17 @@ import struct
 import threading
 import backend.tbm.Booter
 import backend.tbm.Table
+import backend.parser.statement.Statements as Statements
+from backend.vm.VersionManager import VersionManager
+from backend.dm.DataManager import DataManager
+from backend.tbm.Booter import Booter
 class BeginRes(object):
     def __init__(self, xid = 0, result = b''):
-        self.xid = 0
-        self.result = b''
-
-def create(path, vm, dm):
-    booter = backend.tbm.Booter.create(path)
-    booter.update(struct.pack('>q', 0))
-    return TableManager(vm, dm, booter)
-
-def fileopen(path, vm, dm):
-    booter = backend.tbm.Booter.fileopen(path)
-    return TableManager(vm, dm, booter)
+        self.xid = xid
+        self.result = result
 
 class TableManager:
-    def __init__(self, vm, dm, booter):
+    def __init__(self, vm: VersionManager, dm: DataManager, booter: Booter):
         self.vm = vm
         self.dm = dm
         self.booter = booter
@@ -26,37 +21,37 @@ class TableManager:
         self.lock = threading.RLock()
         self.loadTables()
     
-    def loadTables(self):
+    def loadTables(self) -> None:
         uid = self.firstTableUid()
         while uid:
             tb = backend.tbm.Table.loadTable(self, uid)
             uid = tb.nextUid
             self.tableCache[tb.name] = tb
 
-    def firstTableUid(self):
+    def firstTableUid(self) -> int:
         raw = self.booter.load()
         return struct.unpack('>q', raw)[0]
     
-    def updateFirstTableUid(self, uid):
+    def updateFirstTableUid(self, uid: int) ->None:
         raw = struct.pack('>q', uid)
         self.booter.update(raw)
 
-    def begin(self, begin):
+    def begin(self, begin: Statements.Begin) -> BeginRes:
         res = BeginRes()
         level = 1 if begin.isRepeatableRead else 0
         res.xid = self.vm.begin(level)
         res.result = b'begin'
         return res
     
-    def commit(self, xid):
+    def commit(self, xid: int) -> bytes:
         self.vm.commit(xid)
         return b'commit'
     
-    def abort(self, xid):
+    def abort(self, xid: int) -> bytes:
         self.vm.abort(xid)
         return b'abort'
     
-    def show(self, xid):
+    def show(self, xid: int) -> bytes:
         self.lock.acquire()
         try:
             sb = []
@@ -73,7 +68,7 @@ class TableManager:
         finally:
             self.lock.release()
 
-    def create(self, xid, create):
+    def create(self, xid: int, create: Statements.Create) -> bytes:
         self.lock.acquire()
         try:
             if self.tableCache.get(create.tableName):
@@ -88,7 +83,7 @@ class TableManager:
         finally:
             self.lock.release()
 
-    def insert(self, xid, insert):
+    def insert(self, xid: int, insert: Statements.Insert) -> bytes:
         self.lock.acquire()
         table = self.tableCache.get(insert.tableName)
         self.lock.release()
@@ -97,7 +92,7 @@ class TableManager:
         table.insert(xid, insert)
         return b'insert'
     
-    def read(self, xid, read):
+    def read(self, xid: int, read: Statements.Select) -> bytes:
         self.lock.acquire()
         table = self.tableCache.get(read.tableName)
         self.lock.release()
@@ -105,7 +100,7 @@ class TableManager:
             raise Exception("TableNotFoundException")
         return table.read(xid, read).encode('utf-8')
     
-    def update(self, xid, update):
+    def update(self, xid: int, update: Statements.Update) -> bytes:
         self.lock.acquire()
         table = self.tableCache.get(update.tableName)
         self.lock.release()
@@ -114,7 +109,7 @@ class TableManager:
         count = table.update(xid, update)
         return ("update " + str(count)).encode('utf-8')
     
-    def delete(self, xid, delete):
+    def delete(self, xid: int, delete: Statements.Delete) -> bytes:
         self.lock.acquire()
         table = self.tableCache.get(delete.tableName)
         self.lock.release()
@@ -122,3 +117,12 @@ class TableManager:
             raise Exception("TableNotFoundException")
         count = table.delete(xid, delete)
         return ("delete " + str(count)).encode('utf-8')
+
+def create(path: str, vm: VersionManager, dm: DataManager) -> TableManager:
+    booter = backend.tbm.Booter.create(path)
+    booter.update(struct.pack('>q', 0))
+    return TableManager(vm, dm, booter)
+
+def fileopen(path: str, vm: VersionManager, dm: DataManager) -> TableManager:
+    booter = backend.tbm.Booter.fileopen(path)
+    return TableManager(vm, dm, booter)

@@ -2,6 +2,6 @@
 传输的最基本结构
 '''
 class Package(object):
-    def __init__(self, data, err):
+    def __init__(self, data: bytearray | bytes, err: BaseException):
         self.data = data
         self.err = err

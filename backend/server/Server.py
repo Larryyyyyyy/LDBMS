@@ -6,13 +6,14 @@ from transport.Encoder import Encoder
 from transport.Package import Package
 from transport.Packager import Packager
 from transport.Transporter import Transporter
+from backend.tbm.TableManager import TableManager
 
 class Server(object):
-    def __init__(self, port, tbm):
+    def __init__(self, port: int, tbm: TableManager):
         self.port = port
         self.tbm = tbm
     
-    def start(self):
+    def start(self) -> None:
         ss = None
         try:
             ss = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -35,12 +36,12 @@ class Server(object):
                 ss.close()
     
 class HandleSocket(threading.Thread):
-    def __init__(self, socket, tbm):
+    def __init__(self, socket: socket.socket, tbm: TableManager):
         threading.Thread.__init__(self)
         self.socket = socket
         self.tbm = tbm
     
-    def run(self):
+    def run(self) -> None:
         address = self.socket.getpeername()
         print(f"Connected to {address[0]}:{address[1]}")
         packager = None

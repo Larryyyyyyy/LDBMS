@@ -1,11 +1,12 @@
 # 日志的二进制文件: [XChecksum][Log1][Log2][Log3]...[LogN][BadTail]
-# 每个 [Log] 包括 [Size][Checksum][Data], [Size]是一个4字节整数
-# XChecksum 为所有 Checksum 的校检值求和,所有 Checksum 都是一个4字节整数
-# BadTail 是在数据库崩溃时,没有来得及写完的日志数据
+# 每个 [Log] 包括 [Size][Checksum][Data], [Size]是一个 4 字节整数
+# XChecksum 为所有 Checksum 的校检值求和, 所有 Checksum 都是一个 4 字节整数
+# BadTail 是在数据库崩溃时, 没有来得及写完的日志数据
 import struct
 import threading
 
 SEED = 13331
+OF_XCHECKSUM = 4
 OF_SIZE = 0
 OF_CHECKSUM = OF_SIZE + 4
 OF_DATA = OF_CHECKSUM + 4
@@ -13,30 +14,22 @@ MASK = 0xFFFFFFFF
 
 LOG_SUFFIX = ".log"
 
-def create(path):
-    fileName = path + LOG_SUFFIX
-    with open(fileName, 'wb+') as f:
-        f.seek(0, 0)
-        f.write(struct.pack('>i', 0))
-    f.close()
-    return Logger(fileName)
-
-def fileopen(path):
-    fileName = path + LOG_SUFFIX
-    lg = Logger(fileName)
-    lg.init()
-    return lg
-
 class Logger(object):
-    def __init__(self, file, xChecksum = 0):
+    def __init__(self, file: str, xChecksum = 0):
         self.file = file
-        self.position = 0                          # 日志指针的位置
-        self.fileSize = 0                          # 日志文件的大小
-        self.xChecksum = xChecksum                 # 所有Checksum的求和
+        # 日志指针的位置
+        self.position = 0
+        # 日志文件的大小
+        self.fileSize = 0
+        # 所有Checksum的求和
+        self.xChecksum = xChecksum
         self.lock = threading.RLock()
     
-    def init(self):
-        with open(self.file, "rb+") as f:          # 写入 XChecksum
+    def init(self) -> None:
+        '''
+        写入 XChecksum
+        '''
+        with open(self.file, "rb+") as f:
             f.seek(0, 0)
             raw = f.read(4)
             f.seek(0, 2)
@@ -45,7 +38,10 @@ class Logger(object):
         self.xChecksum = struct.unpack(">i", raw)[0]
         self.checkAndRemoveTail()
 
-    def checkAndRemoveTail(self):                  # 检查并移除 BadTail
+    def checkAndRemoveTail(self) -> None:
+        '''
+        检查并移除 BadTail
+        '''
         self.rewind()
         xCheck = 0
         while True:
@@ -56,13 +52,19 @@ class Logger(object):
         self.truncate(self.position)
         self.rewind()
 
-    def handle_exceed(self, xCheck):
+    def handle_exceed(self, xCheck: int) -> int:
+        '''
+        对 4 字节整数的手动处理
+        '''
         res = xCheck & MASK
         if res & 0x80000000:
             res = res - 0x100000000
         return res
 
-    def calChecksum(self, xCheck, log):            # 计算Checksum
+    def calChecksum(self, xCheck: int, log: bytearray) -> int:
+        '''
+        计算Checksum
+        '''
         for i in log:
             xCheck = self.handle_exceed(xCheck * SEED)
             val = i
@@ -71,7 +73,18 @@ class Logger(object):
             xCheck = self.handle_exceed(xCheck + val)
         return xCheck
     
-    def log(self, data):
+    def wrapLog(self, data: bytearray | bytes) -> bytearray | bytes:
+        '''
+        包装一个 [log]
+        '''
+        checksum = struct.pack(">i", self.calChecksum(0, data))
+        size = struct.pack(">i", len(data))
+        return size + checksum + data
+
+    def log(self, data: bytearray | bytes) -> None:
+        '''
+        写入 [log]
+        '''
         log = self.wrapLog(data)
         self.lock.acquire()
         try:
@@ -83,17 +96,35 @@ class Logger(object):
             self.lock.release()
         self.updateXChecksum(log)
 
-    def internNext(self):
+    def next(self) -> None | bytearray:
+        '''
+        读取 position 位置的 [log]
+        '''
+        self.lock.acquire()
+        try:
+            log = self.internNext()
+            if log == None:
+                return None
+            return log[OF_DATA : len(log)]
+        finally:
+            self.lock.release()
+    
+    def internNext(self) -> None | bytearray:
+        '''
+        读取 [log] 的具体实现, 同时更新 position
+        '''
         if self.position + OF_DATA >= self.fileSize:
             return None
-        with open(self.file, "rb+") as f:          # 读取size
+        # 读取size
+        with open(self.file, "rb+") as f:
             f.seek(self.position)
             tmp = f.read(4)
         f.close()
         size = struct.unpack(">i", tmp)[0]
         if self.position + OF_DATA + size > self.fileSize:
             return None
-        with open(self.file, "rb+") as f:          # 读取checkSum + data
+        # 读取checkSum + data
+        with open(self.file, "rb+") as f:
             f.seek(self.position)
             buf = f.read(OF_DATA + size)
         f.close()
@@ -105,19 +136,20 @@ class Logger(object):
         self.position += len(log)
         return log
 
-    def updateXChecksum(self, log):
+    def updateXChecksum(self, log: bytearray | bytes) -> None:
+        '''
+        一条 [log] 变动时, 要修改 XChecksum
+        '''
         self.xChecksum = self.calChecksum(self.xChecksum, log)
         with open(self.file, 'rb+') as f:
             f.seek(0, 0)
             f.write(struct.pack(">i", self.xChecksum))
         f.close()
 
-    def wrapLog(self, data):
-        checksum = struct.pack(">i", self.calChecksum(0, data))
-        size = struct.pack(">i", len(data))
-        return size + checksum + data
-
-    def truncate(self, x):
+    def truncate(self, x: int) -> None:
+        '''
+        截断 log 文件前 x 部分
+        '''
         self.lock.acquire()
         try:
             with open(self.file, "rb+") as f:
@@ -126,15 +158,25 @@ class Logger(object):
         finally:
             self.lock.release()
 
-    def next(self):
-        self.lock.acquire()
-        try:
-            log = self.internNext()
-            if log == None:
-                return None
-            return log[OF_DATA : len(log)]
-        finally:
-            self.lock.release()
-    
-    def rewind(self):
-        self.position = 4
+    def rewind(self) -> None:
+        self.position = OF_XCHECKSUM
+
+def create(path: str) -> Logger:
+    '''
+    创建 log 文件
+    '''
+    fileName = path + LOG_SUFFIX
+    with open(fileName, 'wb+') as f:
+        f.seek(0, 0)
+        f.write(struct.pack('>i', 0))
+    f.close()
+    return Logger(fileName)
+
+def fileopen(path: str) -> Logger:
+    '''
+    打开 log 文件
+    '''
+    fileName = path + LOG_SUFFIX
+    lg = Logger(fileName)
+    lg.init()
+    return lg

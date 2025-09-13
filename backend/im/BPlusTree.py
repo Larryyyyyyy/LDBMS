@@ -2,20 +2,11 @@ import struct
 import threading
 import backend.im.Node
 import backend.tm.TransactionManager
-
-def create(dm):
-    rawRoot = backend.im.Node.newNilRootRaw()
-    rootUid = dm.insert(backend.tm.TransactionManager.SUPER_XID, rawRoot)
-    return dm.insert(backend.tm.TransactionManager.SUPER_XID, struct.pack(">q", rootUid))
-
-def load(bootUid, dm):
-    bootDataItem = dm.read(bootUid)
-    assert bootDataItem != None
-    t = BPlusTree(dm, bootUid, bootDataItem, threading.RLock())
-    return t
+from backend.dm.DataManager import DataManager
+from backend.dm.dataItem.DataItem import DataItem
 
 class BPlusTree(object):
-    def __init__(self, dm, bootUid, bootDataItem, bootLock):
+    def __init__(self, dm: DataManager, bootUid: int, bootDataItem: DataItem, bootLock: threading.RLock):
         self.dm = dm
         self.bootUid = bootUid
         self.bootDataItem = bootDataItem
@@ -26,7 +17,7 @@ class BPlusTree(object):
             self.newNode = newNode
             self.newKey = newKey
 
-    def rootUid(self):
+    def rootUid(self) -> int:
         self.bootLock.acquire()
         try:
             sa = self.bootDataItem.data()
@@ -34,19 +25,19 @@ class BPlusTree(object):
         finally:
             self.bootLock.release()
 
-    def updateRootUid(self, left, right, rightKey):
+    def updateRootUid(self, left: int, right: int, rightKey: int) -> None:
         self.bootLock.acquire()
         try:
             rootRaw = backend.im.Node.newRootRaw(left, right, rightKey)
             newRootUid = self.dm.insert(backend.tm.TransactionManager.SUPER_XID, rootRaw)
             self.bootDataItem.before()
             self.diRaw = self.bootDataItem.data()
-            self.diRaw[self.diRaw.start : self.diRaw.start + 8] = struct.pack('>q', newRootUid)
+            self.diRaw.raw[self.diRaw.start : self.diRaw.start + 8] = struct.pack('>q', newRootUid)
             self.bootDataItem.after(backend.tm.TransactionManager.SUPER_XID)
         finally:
             self.bootLock.release()
 
-    def searchLeaf(self, nodeUid, key):
+    def searchLeaf(self, nodeUid: int, key: int) -> int:
         node = backend.im.Node.loadNode(self, nodeUid)
         isLeaf = node.isLeaf()
         node.release()
@@ -56,7 +47,7 @@ class BPlusTree(object):
             next = self.searchNext(nodeUid, key)
             return self.searchLeaf(next, key)
 
-    def searchNext(self, nodeUid, key):
+    def searchNext(self, nodeUid: int, key: int) -> int:
         while True:
             node = backend.im.Node.loadNode(self, nodeUid)
             res = node.searchNext(key)
@@ -65,10 +56,10 @@ class BPlusTree(object):
                 return res.uid
             nodeUid = res.siblingUid
 
-    def search(self, key):
+    def search(self, key: int) -> list:
         return self.searchRange(key, key)
 
-    def searchRange(self, leftKey, rightKey):
+    def searchRange(self, leftKey: int, rightKey: int) -> list:
         rootUid = self.rootUid()
         leafUid = self.searchLeaf(rootUid, leftKey)
         uids = []
@@ -84,13 +75,13 @@ class BPlusTree(object):
                 leafUid = res.siblingUid
         return uids
 
-    def insert(self, key, uid):
+    def insert(self, key: int, uid: int) -> None:
         rootUid = self.rootUid()
         res = self.insert_Res(rootUid, uid, key)
         if res.newNode != 0:
             self.updateRootUid(rootUid, res.newNode, res.newKey)
 
-    def insert_Res(self, nodeUid, uid, key):
+    def insert_Res(self, nodeUid: int, uid: int, key: int) -> InsertRes:
         node = backend.im.Node.loadNode(self, nodeUid)
         isLeaf = node.isLeaf()
         node.release()
@@ -105,7 +96,8 @@ class BPlusTree(object):
             else:
                 res = self.InsertRes()
         return res
-    def insertAndSplit(self, nodeUid, uid, key):
+
+    def insertAndSplit(self, nodeUid: int, uid: int, key: int) -> InsertRes:
         while True:
             node = backend.im.Node.loadNode(self, nodeUid)
             iasr = node.insertAndSplit(uid, key)
@@ -116,5 +108,16 @@ class BPlusTree(object):
                 res = self.InsertRes(iasr.newSon, iasr.newKey)
                 return res
 
-    def close(self):
+    def close(self) -> None:
         self.bootDataItem.release()
+
+def create(dm: DataManager) -> int:
+    rawRoot = backend.im.Node.newNilRootRaw()
+    rootUid = dm.insert(backend.tm.TransactionManager.SUPER_XID, rawRoot)
+    return dm.insert(backend.tm.TransactionManager.SUPER_XID, struct.pack(">q", rootUid))
+
+def load(bootUid: int, dm: DataManager) -> BPlusTree:
+    bootDataItem = dm.read(bootUid)
+    assert bootDataItem != None
+    t = BPlusTree(dm, bootUid, bootDataItem, threading.RLock())
+    return t
